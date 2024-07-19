@@ -1,0 +1,42 @@
+Summary
+In this project, we develop and evaluate machine learning models to predict NBA game outcomes, leveraging both classical box-score statistics and advanced engineered features. Utilizing comprehensive datasets from various sources, we implemented feature engineering techniques to create meaningful predictors, including player efficiency ratings, historical match data, and team performance metrics. We applied multiple classifiers such as Ridge Classifier, Logistic Regression, Naïve Bayes, K-Nearest Neighbors, Random Forest, Decision Tree, Gradient Boosting, and Support Vector Machines, with feature selection methods like Sequential Forward Selection (SFS) and Variance Thresholding (VT) to enhance model performance. Our results demonstrate significant improvements in predictive accuracy, particularly when integrating advanced features and rolling data. The Ridge Classifier and Logistic Regression consistently showed top performance across various scenarios, achieving accuracy rates up to 79.83%. Comparative analysis with existing literature indicates that our models outperform or match previously reported results, highlighting the robustness of our approach. This study underscores the potential of advanced engineered features and meticulous feature selection in developing highly accurate predictive models for NBA game outcomes, offering valuable insights for teams, analysts, and the sports betting industry.
+
+Data
+The data extraction for NBA player statistics, odds, standings, and game scores was conducted using Python scripts and the Playwright and Beautiful Soup libraries.
+
+1. Player Statistics
+The player statistics data for NBA seasons was obtained from "https://www.basketball-reference.com/" by generating URLs for each season, such as "https://www.basketball-reference.com/leagues/NBA_{season}_advanced.html". The HTML content was retrieved, ensuring server load management with random sleep intervals and timeout error handling. This data allowed us to analyze player contributions and identify key players ("big 5"), integrating their impact into our predictive model.
+
+2. Box-score Statistics
+We collected NBA season standings and game scores data from basketball-reference.com. The data included game scores, team performance metrics, and detailed player-level statistics, which provided insights into game dynamics. The URLs for each season from 2013-2014 to 2022-2023 were accessed, and the HTML content was parsed to extract links to individual game pages. These pages contained detailed performance metrics, which were stored as separate HTML files for analysis. 
+The box-score statistics encompassed a wide range of metrics, including minutes played, field goals, three-pointers, free throws, rebounds, assists, steals, blocks, turnovers, personal fouls, points, true shooting percentage, effective field goal percentage, and various offensive and defensive ratings. These features formed the foundation for our model, capturing game nuances and player performance trends.
+
+3. Historical Odds
+Historical NBA odds data was obtained from sportsbookreviewsonline.com. URLs were constructed to access odds data for multiple seasons, and HTML retrieval was performed with careful server load management. The retrieved odds data was instrumental in understanding betting patterns and incorporating this information into our predictive model. 
+
+Ethical Considerations and Limitations
+We adhered to ethical guidelines by respecting terms of use and copyright restrictions of data sources. No personally identifiable information was collected, and all data were used solely for research purposes. Limitations include potential biases in the odds data and the dynamic nature of online data sources, which could impact data consistency. 
+
+Modelling Approach
+The methodology for developing the predictive model for NBA game outcomes involves several stages: data preprocessing, normalization, feature selection, and iterative model enhancement using cross-validation techniques. Two feature selection techniques were used: Sequential Feature Selection (SFS) and Variance Thresholding (VT), combined with one of seven different classifiers.
+
+Data Preprocessing
+Data Preprocessing involved several critical steps to ensure the dataset's suitability for predictive analysis. First, non-contributory attributes like season, date, and team names were excluded to focus on relevant predictors. Next, missing values were handled through imputation, replacing them with the median or mode as appropriate. The data was then normalized using Min-Max scaling to ensure uniformity in feature scaling. Additionally, categorical variables were encoded using one-hot encoding to transform them into a numerical format suitable for machine learning algorithms. This comprehensive preprocessing approach prepared the dataset for effective model training and prediction.
+
+Feature Selection
+The feature selection process was critical in handling the extensive set of over 335 features, including 140 box-score statistics. The goal was to distil the most relevant attributes for enhancing model accuracy and efficiency. To address this, we embraced a meticulous feature selection process, employing two distinctive techniques: Sequential Forward Selection (SFS) and Variance Thresholding.
+
+(1)	Sequential Forward Selection (SFS)
+SFS is an iterative methodology that progressively introduces features to enhance model performance. It starts with an empty set and adds features one by one, evaluating model performance at each step to uncover the optimal subset of features.
+
+(2)	Variance Thresholding (VT)
+VT identifies and eliminates features with minimal variance, as low-variance attributes exhibit limited variability and are less informative for modelling. By setting a threshold value, features below this threshold are removed, reducing dimensionality and improving computational efficiency.
+
+Model Selection
+Selecting appropriate classifiers is crucial for building a robust predictive model for NBA game outcomes. We employed eight classifiers: Ridge Classifier, Logistic Regression, Naive Bayes, K-Nearest Neighbors (KNN), Random Forest, Decision Tree, Gradient Boosting, and Support Vector Machines (SVM). Each was chosen for its unique operating principles and suitability for the prediction task. 
+
+Cross-Validation
+In predictive modeling with time series data like NBA game statistics, conventional cross-validation techniques are insufficient. Instead, we employ the TimeSeriesSplit technique, which respects the temporal order of data, unlike traditional K-Fold validation that partitions data randomly. TimeSeriesSplit creates training and testing sets that preserve the chronological sequence, ensuring no future data is used in training. The crucial parameter here is n_splits, set to 5, dividing the dataset into five consecutive, time-based folds. This technique maintains temporal integrity and captures model adaptability across different periods, enhancing the authenticity and relevance of our predictions.
+
+Model Performance Evaluation
+To ensure robust NBA game outcome predictions, we meticulously evaluated our model's performance through various metrics, including accuracy, classification reports, confusion matrices, and ROC analysis.
