@@ -25,7 +25,7 @@ class NBAInjuryScraper:
     def _ensure_output_directory(self) -> None:
         """Creates the output directory if it doesn't exist"""
         os.makedirs(self.output_dir, exist_ok=True)
-
+        
     def _fetch_page(self) -> Optional[str]:
         """
         Fetches the HTML content from the URL
@@ -133,6 +133,38 @@ class NBAInjuryScraper:
         # Reorder columns
         return df[['player', 'team', 'update_date', 'Status', 'Description']]
 
+    def process_injured_players(self, df: pd.DataFrame, max_players: int = 10) -> pd.DataFrame:
+        """
+        Process injury data to create a wide format table of injured players by team.
+        
+        Args:
+            df (pd.DataFrame): Raw injury data DataFrame
+            max_players (int): Maximum number of players to include per team
+            
+        Returns:
+            pd.DataFrame: Processed DataFrame with teams and their injured players
+        """
+        # 1. Filter for 'Out' status only
+        out_players = df[df['Status'].str.contains('Out', case=False)].copy()
+        
+        # 2. Keep only player and team columns
+        out_players = out_players[['player', 'team']].copy()
+        
+        # 3. Group by team and aggregate players into lists
+        team_players = out_players.groupby('team')['player'].agg(list).reset_index()
+        
+        # 4. Create columns for each player position (p1, p2, etc.)
+        for i in range(max_players):
+            col_name = f'p{i+1}'
+            team_players[col_name] = team_players['player'].apply(
+                lambda x: x[i] if len(x) > i else None
+            )
+        
+        # 5. Drop the list column and keep only team and player columns
+        final_df = team_players.drop('player', axis=1)
+        
+        return final_df
+
     def save_to_csv(self, df: pd.DataFrame, filename: str) -> None:
         """
         Saves the DataFrame to csv in the specified output directory
@@ -170,19 +202,28 @@ def main():
     """Main function to demonstrate scraper usage"""
     # Define base directory and create full path for output
     base_dir = "Refresh/data/parsed_csvs/nbaInjuries_csv"
-
+    
     url = "https://www.basketball-reference.com/friv/injuries.cgi"
     scraper = NBAInjuryScraper(url, output_dir=base_dir)
+    
+    # Scrape and process initial data
     df = scraper.scrape()
     
     if df is not None:
         print(f"Successfully scraped {len(df)} injury records")
-        print("\nSample of the data:")
+        print("\nSample of the raw data:")
         print(df.head())
         
-        # Save to csv in the specified directory
+        # Save raw data
         scraper.save_to_csv(df, 'nba_injuries.csv')
-        print("\nData saved as 'nba_injuries.csv'")
+        
+        # Process data to get injured players by team
+        processed_df = scraper.process_injured_players(df)
+        print("\nSample of the processed data:")
+        print(processed_df.head())
+        
+        # Save processed data
+        scraper.save_to_csv(processed_df, 'nba_injuries_processed.csv')
 
 if __name__ == "__main__":
     main()
