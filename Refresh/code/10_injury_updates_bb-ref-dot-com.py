@@ -4,6 +4,7 @@ import pandas as pd
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+import os
 
 @dataclass
 class InjuryRecord:
@@ -16,9 +17,15 @@ class InjuryRecord:
 class NBAInjuryScraper:
     """Class to handle scraping and processing of NBA injury data"""
     
-    def __init__(self, url: str):
+    def __init__(self, url: str, output_dir: str):
         self.url = url
+        self.output_dir = output_dir
+        self._ensure_output_directory()
         
+    def _ensure_output_directory(self) -> None:
+        """Creates the output directory if it doesn't exist"""
+        os.makedirs(self.output_dir, exist_ok=True)
+
     def _fetch_page(self) -> Optional[str]:
         """
         Fetches the HTML content from the URL
@@ -125,7 +132,19 @@ class NBAInjuryScraper:
         
         # Reorder columns
         return df[['player', 'team', 'update_date', 'Status', 'Description']]
+
+    def save_to_csv(self, df: pd.DataFrame, filename: str) -> None:
+        """
+        Saves the DataFrame to csv in the specified output directory
         
+        Args:
+            df (pd.DataFrame): DataFrame to save
+            filename (str): Name of the output file
+        """
+        output_path = os.path.join(self.output_dir, filename)
+        df.to_csv(output_path, index=False)
+        print(f"\nData saved to '{output_path}'")
+
     def scrape(self) -> Optional[pd.DataFrame]:
         """
         Main method to scrape NBA injury data
@@ -149,8 +168,11 @@ class NBAInjuryScraper:
 
 def main():
     """Main function to demonstrate scraper usage"""
+    # Define base directory and create full path for output
+    base_dir = "Refresh/data/parsed_csvs/nbaInjuries_csv"
+
     url = "https://www.basketball-reference.com/friv/injuries.cgi"
-    scraper = NBAInjuryScraper(url)
+    scraper = NBAInjuryScraper(url, output_dir=base_dir)
     df = scraper.scrape()
     
     if df is not None:
@@ -158,9 +180,9 @@ def main():
         print("\nSample of the data:")
         print(df.head())
         
-        # Optional: Save to CSV
-        df.to_csv('nba_injuries.csv', index=False)
-        print("\nData saved to 'nba_injuries.csv'")
+        # Save to csv in the specified directory
+        scraper.save_to_csv(df, 'nba_injuries.csv')
+        print("\nData saved as 'nba_injuries.csv'")
 
 if __name__ == "__main__":
     main()
