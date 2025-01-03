@@ -20,11 +20,27 @@ class NBAInjuryScraper:
     def __init__(self, url: str, output_dir: str):
         self.url = url
         self.output_dir = output_dir
+        self.team_mapping = {
+            "New York Knicks": "NYK", "Boston Celtics": "BOS", "Minnesota Timberwolves": "MIN",
+            "Los Angeles Lakers": "LAL", "Brooklyn Nets": "BRK", "Atlanta Hawks": "ATL",
+            "Indiana Pacers": "IND", "Detroit Pistons": "DET", "Charlotte Hornets": "CHO",
+            "Houston Rockets": "HOU", "Phoenix Suns": "PHO", "Los Angeles Clippers": "LAC",
+            "Orlando Magic": "ORL", "Miami Heat": "MIA", "Chicago Bulls": "CHI",
+            "New Orleans Pelicans": "NOP", "Milwaukee Bucks": "MIL", "Philadelphia 76ers": "PHI",
+            "Golden State Warriors": "GSW", "Portland Trail Blazers": "POR", "Cleveland Cavaliers": "CLE",
+            "Toronto Raptors": "TOR", "Memphis Grizzlies": "MEM", "Utah Jazz": "UTA",
+            "San Antonio Spurs": "SAS", "Dallas Mavericks": "DAL", "Oklahoma City Thunder": "OKC",
+            "Denver Nuggets": "DEN", "Washington Wizards": "WAS", "Sacramento Kings": "SAC"
+        }
         self._ensure_output_directory()
         
     def _ensure_output_directory(self) -> None:
         """Creates the output directory if it doesn't exist"""
         os.makedirs(self.output_dir, exist_ok=True)
+        
+    def _map_team_name(self, team: str) -> str:
+        """Maps full team name to abbreviation"""
+        return self.team_mapping.get(team, team)
         
     def _fetch_page(self) -> Optional[str]:
         """
@@ -76,7 +92,7 @@ class NBAInjuryScraper:
             cols = row.find_all(['th', 'td'])
             if len(cols) >= 4:
                 player = cols[0].text.strip()
-                team = cols[1].text.strip()
+                team = self._map_team_name(cols[1].text.strip())  # Map team name here
                 update_date = cols[2].text.strip()
                 description = cols[3].text.strip()
                 
@@ -99,7 +115,8 @@ class NBAInjuryScraper:
         Returns:
             pd.DataFrame: DataFrame containing injury data
         """
-        return pd.DataFrame([vars(injury) for injury in injuries])
+        df = pd.DataFrame([vars(injury) for injury in injuries])
+        return df
 
     def _process_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -111,8 +128,11 @@ class NBAInjuryScraper:
         Returns:
             pd.DataFrame: Processed DataFrame
         """
+        # Create a copy to avoid SettingWithCopyWarning
+        processed_df = df.copy()
+        
         # Remove duplicate header row if exists
-        df = df[df['player'] != 'Player']
+        processed_df = processed_df[processed_df['player'] != 'Player']
         
         # Split Description into Status and Description
         def split_description(text: str) -> Tuple[str, str]:
@@ -126,26 +146,30 @@ class NBAInjuryScraper:
             return status, description
         
         # Apply the split function
-        status_desc = df['description'].apply(split_description)
-        df['Status'] = status_desc.apply(lambda x: x[0])
-        df['Description'] = status_desc.apply(lambda x: x[1])
+        status_desc = processed_df['description'].apply(split_description)
+        processed_df.loc[:, 'Status'] = status_desc.apply(lambda x: x[0])
+        processed_df.loc[:, 'Description'] = status_desc.apply(lambda x: x[1])
         
         # Reorder columns
-        return df[['player', 'team', 'update_date', 'Status', 'Description']]
+        return processed_df[['player', 'team', 'update_date', 'Status', 'Description']]
 
-    def process_injured_players(self, df: pd.DataFrame, max_players: int = 10) -> pd.DataFrame:
+    def process_injured_players(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Process injury data to create a wide format table of injured players by team.
         
         Args:
             df (pd.DataFrame): Raw injury data DataFrame
-            max_players (int): Maximum number of players to include per team
             
         Returns:
             pd.DataFrame: Processed DataFrame with teams and their injured players
         """
-        # 1. Filter for 'Out' status only
-        out_players = df[df['Status'].str.contains('Out', case=False)].copy()
+        # 1. Filter for 'Out' status only (including 'Out For Season')
+        out_players = df[
+            (df['Status'].str.contains('Out', case=False)) & 
+            (~df['Status'].str.contains('Day To Day', case=False))
+        ].copy()
+        
+        print(f"\nFound {len(out_players)} players marked as out")
         
         # 2. Keep only player and team columns
         out_players = out_players[['player', 'team']].copy()
@@ -153,15 +177,27 @@ class NBAInjuryScraper:
         # 3. Group by team and aggregate players into lists
         team_players = out_players.groupby('team')['player'].agg(list).reset_index()
         
-        # 4. Create columns for each player position (p1, p2, etc.)
+        # 4. Calculate the maximum number of players out for any team
+        max_players = max(team_players['player'].apply(len))
+        print(f"Maximum players out for any team: {max_players}")
+        
+        # Print summary of players per team
+        print("\nPlayers out per team:")
+        for _, row in team_players.iterrows():
+            print(f"{row['team']}: {len(row['player'])} players - {', '.join(row['player'])}")
+        
+        # 5. Create columns for each player dynamically
         for i in range(max_players):
-            col_name = f'p{i+1}'
+            col_name = f'Player{i+1}'
             team_players[col_name] = team_players['player'].apply(
-                lambda x: x[i] if len(x) > i else None
+                lambda x: x[i] if i < len(x) else None
             )
         
-        # 5. Drop the list column and keep only team and player columns
+        # 6. Drop the list column and keep only team and player columns
         final_df = team_players.drop('player', axis=1)
+        
+        print(f"\nCreated roster with {max_players} player columns")
+        print(f"Final data shape: {final_df.shape}")
         
         return final_df
 

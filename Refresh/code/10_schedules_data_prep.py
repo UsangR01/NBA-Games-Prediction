@@ -124,6 +124,60 @@ class GameScheduleCleaner:
         self.df.to_csv(self.output_file, index=False)
         print(f"Cleaned and merged data saved to: {self.output_file}")
 
+    def remove_injured_players(self):
+        """Remove injured players from the schedule data and rearrange remaining players."""
+        # Load injured players data
+        injuries_file = "Refresh/data/parsed_csvs/nbaInjuries_csv/nba_injuries_processed.csv"
+        print(f"\nLoading injury data from: {injuries_file}")
+        injuries_df = pd.read_csv(injuries_file)
+        
+        # Get all player columns from injuries DataFrame
+        injury_player_cols = [col for col in injuries_df.columns if col.startswith('Player')]
+        
+        # Get all player columns from schedule DataFrame
+        schedule_player_cols = [col for col in self.df.columns if col.startswith('Player')]
+        
+        print("\nProcessing injuries by team...")
+        # For each team in the schedule
+        for idx, row in self.df.iterrows():
+            team = row['team_opp_next_rival']
+            
+            # Find injured players for this team
+            team_injuries = injuries_df[injuries_df['team'] == team]
+            
+            if not team_injuries.empty:
+                injured_players = []
+                # Collect all injured players for the team
+                for col in injury_player_cols:
+                    players = team_injuries[col].dropna().tolist()
+                    injured_players.extend(players)
+                
+                if injured_players:
+                    print(f"\n{team} has {len(injured_players)} injured players: {', '.join(injured_players)}")
+                    
+                    # Get current players for the team
+                    current_players = []
+                    for col in schedule_player_cols:
+                        player = self.df.at[idx, col]
+                        if pd.notna(player) and player not in injured_players:
+                            current_players.append(player)
+                    
+                    # Clear all player columns for this team
+                    for col in schedule_player_cols:
+                        self.df.at[idx, col] = None
+                    
+                    # Refill player columns with non-injured players
+                    for i, player in enumerate(current_players):
+                        col = f'Player {i+1}'
+                        if col in self.df.columns:
+                            self.df.at[idx, col] = player
+                    
+                    print(f"Rearranged {len(current_players)} players for {team}")
+            else:
+                print(f"\n{team} has no injured players")
+        
+        print("\nInjured players removed and rosters rearranged")
+
     def run(self):
         """Execute the entire data cleaning and merging process."""
         # First transform player stats into roster format
@@ -139,6 +193,11 @@ class GameScheduleCleaner:
         self.filter_by_date_and_team()
         self.add_new_columns()
         self.merge_with_rosters()
+        
+        # Remove injured players
+        self.remove_injured_players()
+        
+        # Save the final data
         self.save_data()
 
 # Usage
