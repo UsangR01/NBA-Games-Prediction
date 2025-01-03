@@ -2,10 +2,10 @@ import pandas as pd
 from datetime import datetime
 
 class GameScheduleCleaner:
-    def __init__(self, input_file, output_file, team_rosters):
+    def __init__(self, input_file, output_file, lineup_file):
         self.input_file = input_file
         self.output_file = output_file
-        self.team_rosters = team_rosters
+        self.lineup_file = lineup_file
         self.team_mapping = {
             "New York Knicks": "NYK", "Boston Celtics": "BOS", "Minnesota Timberwolves": "MIN",
             "Los Angeles Lakers": "LAL", "Brooklyn Nets": "BRK", "Atlanta Hawks": "ATL",
@@ -22,7 +22,7 @@ class GameScheduleCleaner:
     def load_data(self):
         """Load the scraped data from CSV."""
         self.df = pd.read_csv(self.input_file)
-        self.rosters_df = pd.read_csv(self.team_rosters)
+        self.lineup_df = pd.read_csv(self.lineup_file)
         print("Data loaded successfully.")
 
     def clean_headers(self):
@@ -76,15 +76,21 @@ class GameScheduleCleaner:
         self.df['home_next'] = 0
         print("New columns added.")
 
-    def merge_with_rosters(self):
+    def merge_with_last_lineup(self):
         """Merge with the last occurrence of each team from the gameLineup data."""
+        # Convert the date column to datetime format
+        self.lineup_df['Date'] = pd.to_datetime(self.lineup_df['Date'], errors='coerce')
+
+        # Extract the last occurrence of each team from the lineup DataFrame
+        last_lineup_df = self.lineup_df.sort_values(by='Date').groupby('Team').last().reset_index()
+
         # Drop 'Team' and date columns, keep only the lineup-related columns
-        rosters_columns = [col for col in self.rosters_df.columns if col not in ['Team']]
+        lineup_columns = [col for col in last_lineup_df.columns if col not in ['Team', 'Date']]
 
         # Merge the cleaned schedule DataFrame with the lineup columns
         self.df = pd.merge(
             self.df,
-            self.rosters_df[rosters_columns + ['Team']],
+            last_lineup_df[lineup_columns + ['Team']],
             left_on='team_opp_next_rival',
             right_on='Team',
             how='left'
@@ -92,7 +98,7 @@ class GameScheduleCleaner:
 
         # Drop the 'Team' column after the merge
         self.df.drop(columns=['Team'], inplace=True)
-        print("Merged with the roster of each team.")
+        print("Merged with the last occurrence of each team, retaining only the lineup columns.")
 
     def save_data(self):
         """Save the cleaned data to a CSV file."""
@@ -109,13 +115,13 @@ class GameScheduleCleaner:
         self.format_and_sort_date()
         self.filter_by_date_and_team()
         self.add_new_columns()
-        self.merge_with_rosters()
+        self.merge_with_last_lineup()
         self.save_data()
 
 # Usage
 input_file = "Refresh/data/parsed_csvs/gameSchedules_csv/NBA_2025_games_schedule.csv"
 output_file = "Refresh/data/preprocessed_cleaned_csv/NBA_2025_cleaned_schedule.csv"
-team_rosters = "Refresh/data/parsed_csvs/playerStats_csv/team_rosters.csv"
+lineup_file = "Refresh/data/parsed_csvs/gameLineup_csv/gameLineup_2025.csv"
 
-cleaner = GameScheduleCleaner(input_file, output_file, team_rosters)
+cleaner = GameScheduleCleaner(input_file, output_file, lineup_file)
 cleaner.run()
