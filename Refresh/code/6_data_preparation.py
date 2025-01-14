@@ -49,7 +49,7 @@ class DataPreprocessor:
         self.playerStats['MPG'] = round(self.playerStats['MP'] / self.playerStats['G'], 2)
         
         # Select and clean player stats
-        self.playerStats_df = self.playerStats[["Player", "Tm", "MPG", "PER", "WS/48", "Season"]].copy()
+        self.playerStats_df = self.playerStats[["Player", "Team", "MPG", "PER", "WS/48", "Season"]].copy()
         self.playerStats_df["Player"] = self.playerStats_df["Player"].str.replace("*", "", regex=False)
         
         # Handle multiple team players
@@ -63,24 +63,24 @@ class DataPreprocessor:
         if df.shape[0] == 1:
             return df
         else:
-            row = df[df["Tm"] == "TOT"].copy()
+            row = df[df["Team"] == "TOT"].copy()
             if not row.empty:
-                row["Tm"] = df.iloc[-1]["Tm"]
+                row["Team"] = df.iloc[-1]["Team"]
                 return row
             return df.iloc[-1:].copy()
 
     def identify_top_players(self):
         """Identify top performing players for each team"""
         print("Identifying top players...")
-        team_groups = self.playerStats_df.groupby(["Tm", "Season"], group_keys=False)
+        team_groups = self.playerStats_df.groupby(["Team", "Season"], group_keys=False)
         self.top_five_players = team_groups.apply(self._get_top_five_players)
         
         # Reorder columns
         cols = self.top_five_players.columns.tolist()
-        cols.remove('Tm')
+        cols.remove('Team')
         cols.remove('Season')
-        cols.extend(['Tm', 'Season'])
-        self.top_five_players = self.top_five_players[cols].rename(columns={'Tm': 'Team'})
+        cols.extend(['Team', 'Season'])
+        self.top_five_players = self.top_five_players[cols]
         print("Top players identification complete.")
 
     def _get_top_five_players(self, group):
@@ -102,7 +102,7 @@ class DataPreprocessor:
         
         # Create result DataFrame
         result = pd.DataFrame({
-            'Tm': [group['Tm'].iloc[0]],
+            'Team': [group['Team'].iloc[0]],
             'Season': [group['Season'].iloc[0]]
         })
         
