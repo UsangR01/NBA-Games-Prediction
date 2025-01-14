@@ -202,7 +202,7 @@ class GameScheduleCleaner:
 
 # Usage
 input_file = "Refresh/data/parsed_csvs/gameSchedules_csv/NBA_2025_games_schedule.csv"
-output_file = "Refresh/data/preprocessed_cleaned_csv/NBA_2025_cleaned_schedule.csv"
+output_file = "Refresh/data/preprocessed_cleaned_csv/nextGame_lineUp_and_schedule.csv"
 stats_file = "Refresh/data/parsed_csvs/playerStats_csv/playerStats_2025.csv"
 
 cleaner = GameScheduleCleaner(input_file, output_file, stats_file)
