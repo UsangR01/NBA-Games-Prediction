@@ -1,121 +1,292 @@
+import os
 import pandas as pd
+import numpy as np
+from bs4 import BeautifulSoup
+from io import StringIO
 from datetime import datetime
 
-class GameScheduleCleaner:
-    def __init__(self, input_file, output_file, team_rosters):
-        self.input_file = input_file
-        self.output_file = output_file
-        self.team_rosters = team_rosters
-        self.team_mapping = {
-            "New York Knicks": "NYK", "Boston Celtics": "BOS", "Minnesota Timberwolves": "MIN",
-            "Los Angeles Lakers": "LAL", "Brooklyn Nets": "BRK", "Atlanta Hawks": "ATL",
-            "Indiana Pacers": "IND", "Detroit Pistons": "DET", "Charlotte Hornets": "CHO",
-            "Houston Rockets": "HOU", "Phoenix Suns": "PHO", "Los Angeles Clippers": "LAC",
-            "Orlando Magic": "ORL", "Miami Heat": "MIA", "Chicago Bulls": "CHI",
-            "New Orleans Pelicans": "NOP", "Milwaukee Bucks": "MIL", "Philadelphia 76ers": "PHI",
-            "Golden State Warriors": "GSW", "Portland Trail Blazers": "POR", "Cleveland Cavaliers": "CLE",
-            "Toronto Raptors": "TOR", "Memphis Grizzlies": "MEM", "Utah Jazz": "UTA",
-            "San Antonio Spurs": "SAS", "Dallas Mavericks": "DAL", "Oklahoma City Thunder": "OKC",
-            "Denver Nuggets": "DEN", "Washington Wizards": "WAS", "Sacramento Kings": "SAC"
-        }
+pd.set_option('display.max_columns', None)
 
-    def load_data(self):
-        """Load the scraped data from CSV."""
-        self.df = pd.read_csv(self.input_file)
-        self.rosters_df = pd.read_csv(self.team_rosters)
-        print("Data loaded successfully.")
+# Constants
+BASE_DIR = "Refresh/data/parsed_csvs/scores_csv"
+PARSED_FILES_LOG = os.path.join(BASE_DIR, "parsed_files2025.txt")
+GAMES_CSV_TEMPLATE = os.path.join(BASE_DIR, "nba_games_v2_{}.csv")
 
-    def clean_headers(self):
-        """Remove rows that are headers within the data."""
-        self.df = self.df[self.df['Date'] != 'Date']
-        print("Header rows removed.")
+# ---------------- Helper Functions ----------------
 
-    def filter_columns(self):
-        """Retain only specified columns."""
-        self.df = self.df[['Date', 'Visitor/Neutral', 'Home/Neutral']]
-        print("Unnecessary columns dropped.")
+def load_parsed_files(log_path=PARSED_FILES_LOG):
+    """Load the list of parsed files with timestamps from the log file."""
+    parsed_files = {}
+    if os.path.exists(log_path):
+        with open(log_path, "r") as f:
+            for line in f:
+                parts = line.strip().split(",")
+                if len(parts) == 2:
+                    file_path, timestamp = parts
+                    parsed_files[file_path] = float(timestamp)
+    return parsed_files
 
-    def replace_team_names(self):
-        """Replace full team names with abbreviations."""
-        self.df['Visitor/Neutral'] = self.df['Visitor/Neutral'].map(self.team_mapping).fillna(self.df['Visitor/Neutral'])
-        self.df['Home/Neutral'] = self.df['Home/Neutral'].map(self.team_mapping).fillna(self.df['Home/Neutral'])
-        print("Team names replaced with abbreviations.")
+def save_parsed_file(file_path, log_path=PARSED_FILES_LOG):
+    """Save the parsed file name with timestamp to the log file."""
+    current_time = datetime.now().timestamp()
+    with open(log_path, "a") as f:
+        f.write(f"{file_path},{current_time}\n")
 
-    def rename_columns(self):
-        """Rename columns as specified."""
-        self.df.rename(columns={
-            'Date': 'date_next',
-            'Visitor/Neutral': 'team_opp_next',
-            'Home/Neutral': 'team_opp_next_rival'
-        }, inplace=True)
-        print("Columns renamed.")
+def ensure_directory_exists(directory_path):
+    """Ensure a directory exists, if not, create it."""
+    os.makedirs(directory_path, exist_ok=True)
 
-    def format_and_sort_date(self):
-        """Convert the date column to datetime format and sort by date."""
-        self.df['date_next'] = pd.to_datetime(self.df['date_next'], errors='coerce')
-        self.df.sort_values(by='date_next', inplace=True)
-        print("Date column formatted and data sorted by date.")
+def load_existing_games(season):
+    """Load existing games data for a season if it exists."""
+    csv_path = GAMES_CSV_TEMPLATE.format(season)
+    if os.path.exists(csv_path):
+        return pd.read_csv(csv_path, index_col=0)
+    return None
 
-    def filter_by_date_and_team(self):
-        """Filter out past dates and keep only the first occurrence of each team."""
-        # Get today's date
-        today = pd.Timestamp(datetime.now().date())
+def save_combined_games(games_df, season):
+    """Save combined games data to CSV."""
+    csv_path = GAMES_CSV_TEMPLATE.format(season)
+    games_df.to_csv(csv_path)
+    print(f"Saved combined data to {csv_path}")
 
-        # Filter out rows where date_next is less than today
-        self.df = self.df[self.df['date_next'] >= today]
-        print(f"Filtered out rows where 'date_next' is before {today}.")
+def should_parse_file(file_path, parsed_files):
+    """Determine if a file should be parsed based on modification time."""
+    if not os.path.exists(file_path):
+        return False
+    
+    current_mtime = os.path.getmtime(file_path)
+    
+    # If file hasn't been parsed before or has been modified
+    if file_path not in parsed_files:
+        return True
+    
+    return current_mtime > parsed_files[file_path]
 
-        # Keep only the first occurrence of each team in 'team_opp_next_rival'
-        self.df = self.df.drop_duplicates(subset=['team_opp_next_rival'], keep='first')
-        print("Kept only the first occurrence of each team.")
+# ---------------- Parsing Functions ----------------
 
-    def add_new_columns(self):
-        """Add new columns: team_rival, home_next_rival, home_next."""
-        self.df['team_rival'] = self.df['team_opp_next']
-        self.df['home_next_rival'] = 1
-        self.df['home_next'] = 0
-        print("New columns added.")
+def parse_html(file_path):
+    """Parse an HTML file and return a BeautifulSoup object."""
+    with open(file_path, encoding='utf-8') as f:
+        html = f.read()
+    soup = BeautifulSoup(html, 'html.parser')
+    [s.decompose() for s in soup.select("tr.over_header")]
+    [s.decompose() for s in soup.select("tr.thead")]
+    return soup
 
-    def merge_with_rosters(self):
-        """Merge with the last occurrence of each team from the gameLineup data."""
-        # Drop 'Team' and date columns, keep only the lineup-related columns
-        rosters_columns = [col for col in self.rosters_df.columns if col not in ['Team']]
+def read_season_info(soup):
+    """Read and return the season info from the parsed HTML."""
+    nav = soup.select("#bottom_nav_container")[0]
+    hrefs = [a["href"] for a in nav.find_all('a')]
+    season = os.path.basename(hrefs[1]).split("_")[0]
+    return season
 
-        # Merge the cleaned schedule DataFrame with the lineup columns
-        self.df = pd.merge(
-            self.df,
-            self.rosters_df[rosters_columns + ['Team']],
-            left_on='team_opp_next_rival',
-            right_on='Team',
-            how='left'
-        )
+def read_line_score(soup):
+    """Extract line score information from the parsed HTML."""
+    line_score = pd.DataFrame(columns=["team", "total"])
+    
+    try:
+        line_score = pd.read_html(StringIO(str(soup)), attrs={'id': 'line_score'})[0]
+        cols = list(line_score.columns)
+        cols[0] = "team"
+        cols[-1] = "total"
+        line_score.columns = cols
+        line_score = line_score[["team", "total"]]
+    except ValueError as e:
+        if "No tables found" not in str(e):
+            raise e
+        pass
 
-        # Drop the 'Team' column after the merge
-        self.df.drop(columns=['Team'], inplace=True)
-        print("Merged with the roster of each team.")
+    if line_score.empty:
+        teams, pts_elements = extract_missing_line_score_data(soup)
+        line_score = pd.concat([line_score, pd.DataFrame({"team": teams, "total": pts_elements})], ignore_index=True)
+        
+    return line_score
 
-    def save_data(self):
-        """Save the cleaned data to a CSV file."""
-        self.df.to_csv(self.output_file, index=False)
-        print(f"Cleaned and merged data saved to: {self.output_file}")
+def extract_missing_line_score_data(soup):
+    """Extract missing line score data when the table is not found."""
+    team_elements = soup.select("span > strong")
+    teams = [element.text.strip() for element in team_elements if element.text.strip()]
+    
+    tfoot_elements = soup.find_all("tfoot")
+    pts_elements = []
+    for i in range(len(tfoot_elements)):
+        if i == 0 or i == 8:
+            last_row = tfoot_elements[i].find("tr")
+            pts_element = last_row.find("td", {"class": "right", "data-stat": "pts"})
+            pts_elements.append(int(pts_element.text) if pts_element else np.nan)
+    
+    return teams, pts_elements
 
-    def run(self):
-        """Execute the entire data cleaning and merging process."""
-        self.load_data()
-        self.clean_headers()
-        self.filter_columns()
-        self.replace_team_names()
-        self.rename_columns()
-        self.format_and_sort_date()
-        self.filter_by_date_and_team()
-        self.add_new_columns()
-        self.merge_with_rosters()
-        self.save_data()
+def read_stats(soup, team, stat):
+    """Read statistics data from the parsed HTML for a given team and stat."""
+    df = pd.read_html(StringIO(str(soup)), attrs={'id': f'box-{team}-game-{stat}'}, index_col=0)[0]
+    df = df.apply(pd.to_numeric, errors="coerce")
+    return df
 
-# Usage
-input_file = "Refresh/data/parsed_csvs/gameSchedules_csv/NBA_2025_games_schedule.csv"
-output_file = "Refresh/data/preprocessed_cleaned_csv/NBA_2025_cleaned_schedule.csv"
-team_rosters = "Refresh/data/parsed_csvs/playerStats_csv/team_rosters.csv"
+# ---------------- Game Data Handling ----------------
 
-cleaner = GameScheduleCleaner(input_file, output_file, team_rosters)
-cleaner.run()
+def process_game_data(soup, base_cols=None):
+    """Process the game data from the parsed HTML."""
+    line_score = read_line_score(soup)
+    teams = list(line_score["team"])
+    
+    summaries = []
+    for team in teams:
+        basic = read_stats(soup, team, "basic")
+        advanced = read_stats(soup, team, "advanced")
+        
+        summary = create_team_summary(basic, advanced, base_cols)
+        summaries.append(summary)
+    
+    summary = pd.concat(summaries, axis=1).T
+    game = pd.concat([summary, line_score], axis=1)
+    game["home"] = [0, 1]
+    return game
+
+def create_team_summary(basic, advanced, base_cols=None):
+    """Create a summary of team data using basic and advanced stats."""
+    totals = pd.concat([basic.iloc[-1, :], advanced.iloc[-1, :]])
+    totals.index = totals.index.str.lower()
+    
+    maxes = pd.concat([basic.iloc[:-1].max(), advanced.iloc[:-1].max()])
+    maxes.index = maxes.index.str.lower() + "_max"
+    
+    summary = pd.concat([totals, maxes])
+    
+    if base_cols is None:
+        base_cols = list(summary.index.drop_duplicates(keep="first"))
+        base_cols = [b for b in base_cols if "bpm" not in b]
+    
+    summary = summary[base_cols]
+    return summary
+
+def combine_game_data(game, soup, box_score):
+    """
+    Combine game data with opponent information and other metadata.
+    Ensures consistent team ordering where home team is always second.
+    """
+    # Create opponent data with reversed order
+    game_opp = game.iloc[::-1].reset_index()
+    game_opp.columns += "_opp"
+    
+    # Get home/away status
+    home_status = game['home'].tolist()
+    
+    # Reorder based on home/away status to ensure away team is first, home team second
+    if home_status[0] == 1:  # If first team is home team
+        game = game.iloc[::-1].reset_index(drop=True)  # Flip the order
+        game_opp = game_opp.iloc[::-1].reset_index(drop=True)
+        home_status = home_status[::-1]
+    
+    # Combine the data
+    full_game = pd.concat([game, game_opp], axis=1)
+    full_game["season"] = read_season_info(soup)
+    full_game["date"] = os.path.basename(box_score)[:8]
+    full_game["date"] = pd.to_datetime(full_game["date"], format="%Y%m%d")
+    full_game["won"] = full_game["total"] > full_game["total_opp"]
+    
+    # Update home status after reordering
+    full_game["home"] = home_status
+    return full_game
+
+def assign_column_headers(df):
+    """Assign predefined column headers to the DataFrame."""
+    column_headers = [
+        'mp', 'mp.1', 'fg', 'fga', 'fg%', '3p', '3pa', '3p%', 'ft', 'fta', 'ft%', 'orb', 'drb', 'trb', 'ast',
+        'stl', 'blk', 'tov', 'pf', 'pts', 'gmsc', '+/-', 'ts%', 'efg%', '3par', 'ftr', 'orb%', 'drb%', 'trb%',
+        'ast%', 'stl%', 'blk%', 'tov%', 'usg%', 'ortg', 'drtg', 'mp_max', 'mp_max.1', 'fg_max', 'fga_max',
+        'fg%_max', '3p_max', '3pa_max', '3p%_max', 'ft_max', 'fta_max', 'ft%_max', 'orb_max', 'drb_max', 'trb_max',
+        'ast_max', 'stl_max', 'blk_max', 'tov_max', 'pf_max', 'pts_max', 'gmsc_max', '+/-_max', 'ts%_max',
+        'efg%_max', '3par_max', 'ftr_max', 'orb%_max', 'drb%_max', 'trb%_max', 'ast%_max', 'stl%_max', 'blk%_max',
+        'tov%_max', 'usg%_max', 'ortg_max', 'drtg_max', 'team', 'total', 'home', 'index_opp', 'mp_opp',
+        'mp_opp.1', 'fg_opp', 'fga_opp', 'fg%_opp', '3p_opp', '3pa_opp', '3p%_opp', 'ft_opp', 'fta_opp',
+        'ft%_opp', 'orb_opp', 'drb_opp', 'trb_opp', 'ast_opp', 'stl_opp', 'blk_opp', 'tov_opp', 'pf_opp',
+        'pts_opp', 'gmsc_opp', '+/-_opp', 'ts%_opp', 'efg%_opp', '3par_opp', 'ftr_opp', 'orb%_opp', 'drb%_opp',
+        'trb%_opp', 'ast%_opp', 'stl%_opp', 'blk%_opp', 'tov%_opp', 'usg%_opp', 'ortg_opp', 'drtg_opp',
+        'mp_max_opp', 'mp_max_opp.1', 'fg_max_opp', 'fga_max_opp', 'fg%_max_opp', '3p_max_opp', '3pa_max_opp',
+        '3p%_max_opp', 'ft_max_opp', 'fta_max_opp', 'ft%_max_opp', 'orb_max_opp', 'drb_max_opp', 'trb_max_opp',
+        'ast_max_opp', 'stl_max_opp', 'blk_max_opp', 'tov_max_opp', 'pf_max_opp', 'pts_max_opp', 'gmsc_max_opp',
+        '+/-_max_opp', 'ts%_max_opp', 'efg%_max_opp', '3par_max_opp', 'ftr_max_opp', 'orb%_max_opp', 'drb%_max_opp',
+        'trb%_max_opp', 'ast%_max_opp', 'stl%_max_opp', 'blk%_max_opp', 'tov%_max_opp', 'usg%_max_opp',
+        'ortg_max_opp', 'drtg_max_opp', 'team_opp', 'total_opp', 'home_opp', 'season', 'date', 'won'
+    ]
+    df.columns = column_headers
+    return df
+
+def parse_season_data(years):
+    """Parse HTML files for multiple seasons and combine with existing data."""
+    parsed_files = load_parsed_files()
+    
+    for year in years:
+        score_dir = f"Refresh/data/scrapped_htmls/boxscore_stats/{year}/scores"
+        ensure_directory_exists(BASE_DIR)
+        
+        # Load existing games data for the season
+        existing_games = load_existing_games(year)
+        new_games = []
+        
+        box_scores = [os.path.join(score_dir, f) for f in os.listdir(score_dir) if f.endswith(".html")]
+        files_to_parse = [bs for bs in box_scores if should_parse_file(bs, parsed_files)]
+        
+        if not files_to_parse:
+            print(f"No new or modified files to parse for season {year}")
+            continue
+            
+        print(f"Found {len(files_to_parse)} new or modified files to parse for season {year}")
+        
+        base_cols = None
+        for box_score in files_to_parse:
+            try:
+                soup = parse_html(box_score)
+                game = process_game_data(soup, base_cols)
+                full_game = combine_game_data(game, soup, box_score)
+                
+                new_games.append(full_game)
+                save_parsed_file(box_score)
+                
+                if len(new_games) % 10 == 0:
+                    print(f"Processed {len(new_games)} / {len(files_to_parse)} new games")
+                    
+            except Exception as e:
+                print(f"Error processing {box_score}: {str(e)}")
+                continue
+        
+        if new_games:
+            # Combine all new games
+            new_games_df = pd.concat(new_games, ignore_index=True)
+            new_games_df = assign_column_headers(new_games_df)
+            
+            if existing_games is not None:
+                # Remove any existing games with the same dates as new games
+                existing_dates = pd.to_datetime(existing_games['date'])
+                new_dates = pd.to_datetime(new_games_df['date'])
+                existing_games = existing_games[~existing_dates.isin(new_dates)]
+                
+                # Combine existing and new games
+                combined_games = pd.concat([existing_games, new_games_df], ignore_index=True)
+            else:
+                combined_games = new_games_df
+            
+            # Sort by date and ensure proper team ordering
+            combined_games['date'] = pd.to_datetime(combined_games['date'])
+            
+            # Create a game identifier to keep pairs together
+            combined_games['game_id'] = (combined_games.index // 2).astype(int)
+            
+            # Sort by date and game_id to keep teams from same game together
+            combined_games = combined_games.sort_values(['date', 'game_id', 'home'])
+            
+            # Drop the temporary game_id column
+            combined_games = combined_games.drop('game_id', axis=1).reset_index(drop=True)
+            
+            # Save the combined games data
+            save_combined_games(combined_games, year)
+            print(f"Successfully processed season {year}:")
+            print(f"- {len(new_games)} new games added")
+            print(f"- {len(combined_games)} total games in dataset")
+        else:
+            print(f"No new games to add for season {year}")
+
+if __name__ == "__main__":
+    years = ["2025"]
+    parse_season_data(years)
