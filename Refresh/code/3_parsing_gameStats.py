@@ -161,15 +161,32 @@ def create_team_summary(basic, advanced, base_cols=None):
     return summary
 
 def combine_game_data(game, soup, box_score):
-    """Combine game data with opponent information and other metadata."""
+    """
+    Combine game data with opponent information and other metadata.
+    Ensures consistent team ordering where home team is always second.
+    """
+    # Create opponent data with reversed order
     game_opp = game.iloc[::-1].reset_index()
     game_opp.columns += "_opp"
     
+    # Get home/away status
+    home_status = game['home'].tolist()
+    
+    # Reorder based on home/away status to ensure away team is first, home team second
+    if home_status[0] == 1:  # If first team is home team
+        game = game.iloc[::-1].reset_index(drop=True)  # Flip the order
+        game_opp = game_opp.iloc[::-1].reset_index(drop=True)
+        home_status = home_status[::-1]
+    
+    # Combine the data
     full_game = pd.concat([game, game_opp], axis=1)
     full_game["season"] = read_season_info(soup)
     full_game["date"] = os.path.basename(box_score)[:8]
     full_game["date"] = pd.to_datetime(full_game["date"], format="%Y%m%d")
     full_game["won"] = full_game["total"] > full_game["total_opp"]
+    
+    # Update home status after reordering
+    full_game["home"] = home_status
     return full_game
 
 def assign_column_headers(df):
@@ -209,7 +226,6 @@ def parse_season_data(years):
         new_games = []
         
         box_scores = [os.path.join(score_dir, f) for f in os.listdir(score_dir) if f.endswith(".html")]
-        
         files_to_parse = [bs for bs in box_scores if should_parse_file(bs, parsed_files)]
         
         if not files_to_parse:
@@ -236,6 +252,7 @@ def parse_season_data(years):
                 continue
         
         if new_games:
+            # Combine all new games
             new_games_df = pd.concat(new_games, ignore_index=True)
             new_games_df = assign_column_headers(new_games_df)
             
@@ -247,11 +264,20 @@ def parse_season_data(years):
                 
                 # Combine existing and new games
                 combined_games = pd.concat([existing_games, new_games_df], ignore_index=True)
-                # Sort by date
-                combined_games['date'] = pd.to_datetime(combined_games['date'])
-                combined_games = combined_games.sort_values('date').reset_index(drop=True)
             else:
                 combined_games = new_games_df
+            
+            # Sort by date and ensure proper team ordering
+            combined_games['date'] = pd.to_datetime(combined_games['date'])
+            
+            # Create a game identifier to keep pairs together
+            combined_games['game_id'] = (combined_games.index // 2).astype(int)
+            
+            # Sort by date and game_id to keep teams from same game together
+            combined_games = combined_games.sort_values(['date', 'game_id', 'home'])
+            
+            # Drop the temporary game_id column
+            combined_games = combined_games.drop('game_id', axis=1).reset_index(drop=True)
             
             # Save the combined games data
             save_combined_games(combined_games, year)

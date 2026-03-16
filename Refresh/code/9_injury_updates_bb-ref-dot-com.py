@@ -200,6 +200,26 @@ class NBAInjuryScraper:
         print(f"Final data shape: {final_df.shape}")
         
         return final_df
+    
+    def add_season_col(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Adds a season column to the processed DataFrame and moves it to index 1.
+        
+        Args:
+            df (pd.DataFrame): The DataFrame to add the season column to.
+            
+        Returns:
+            pd.DataFrame: The updated DataFrame with the season column at index 1.
+        """
+        current_season = 2025
+        # Add the season column
+        df['Season'] = current_season
+        # Move the Season column to index 1
+        season_col = df.pop('Season')
+        df.insert(1, 'Season', season_col)
+        return df
+
+
 
     def save_to_csv(self, df: pd.DataFrame, filename: str) -> None:
         """
@@ -249,12 +269,17 @@ def main():
         print(f"Successfully scraped {len(df)} injury records")
         print("\nSample of the raw data:")
         print(df.head())
+
+        # Add the season column
+        df = scraper.add_season_col(df)
         
         # Save raw data
         scraper.save_to_csv(df, 'nba_injuries.csv')
         
         # Process data to get injured players by team
         processed_df = scraper.process_injured_players(df)
+        # Add the season column to the processed DataFrame
+        processed_df = scraper.add_season_col(processed_df)
         print("\nSample of the processed data:")
         print(processed_df.head())
         

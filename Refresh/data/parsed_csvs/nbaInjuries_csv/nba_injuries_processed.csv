@@ -1,21 +1,22 @@
-team,Player1,Player2,Player3,Player4,Player5
-ATL,Kobe Bufkin,Larry Nance Jr.,Cody Zeller,,
-BRK,De'Anthony Melton,,,,
-CHO,Tre Mann,Grant Williams,,,
-CLE,Isaac Okoro,,,,
-DAL,Luka Dončić,Dante Exum,,,
-DEN,Vlatko Čančar,Aaron Gordon,DaRon Holmes,,
-DET,Simone Fontecchio,Jaden Ivey,,,
-IND,Isaiah Jackson,Aaron Nesmith,James Wiseman,,
-LAC,Kawhi Leonard,P.J. Tucker,,,
-LAL,Jarred Vanderbilt,Christian Wood,,,
-MEM,Santi Aldama,GG Jackson II,Ja Morant,Marcus Smart,Vince Williams Jr.
-MIA,Dru Smith,,,,
-NOP,Brandon Ingram,Karlo Matković,Zion Williamson,,
-NYK,Mitchell Robinson,,,,
-OKC,Chet Holmgren,Nikola Topić,,,
-ORL,Paolo Banchero,Gary Harris,Franz Wagner,Moritz Wagner,
-PHI,KJ Martin,Jared McCain,,,
-SAS,Jeremy Sochan,,,,
-UTA,Taylor Hendricks,,,,
-WAS,Marvin Bagley III,Saddiq Bey,Bilal Coulibaly,,
+team,Season,Player1,Player2,Player3,Player4
+ATL,2025,Kobe Bufkin,Jalen Johnson,Larry Nance Jr.,Cody Zeller
+BRK,2025,Bojan Bogdanović,Maxwell Lewis,De'Anthony Melton,Cam Thomas
+CHO,2025,Tre Mann,Grant Williams,,
+DAL,2025,Luka Dončić,Dante Exum,Kyrie Irving,
+DEN,2025,Vlatko Čančar,DaRon Holmes,,
+DET,2025,Jaden Ivey,,,
+GSW,2025,Jonathan Kuminga,Gary Payton II,Brandin Podziemski,
+HOU,2025,Jabari Smith Jr.,,,
+IND,2025,Isaiah Jackson,Aaron Nesmith,James Wiseman,
+LAC,2025,P.J. Tucker,,,
+LAL,2025,Jalen Hood-Schifino,Jarred Vanderbilt,Christian Wood,
+MEM,2025,GG Jackson II,Marcus Smart,Cam Spencer,Vince Williams Jr.
+MIA,2025,Josh Richardson,Dru Smith,,
+MIN,2025,Rob Dillingham,,,
+NOP,2025,Keion Brooks Jr.,Herbert Jones,,
+NYK,2025,Mitchell Robinson,,,
+OKC,2025,Chet Holmgren,Ajay Mitchell,Nikola Topić,
+ORL,2025,Franz Wagner,Moritz Wagner,,
+PHI,2025,KJ Martin,Jared McCain,,
+UTA,2025,Jordan Clarkson,Taylor Hendricks,,
+WAS,2025,Marvin Bagley III,Saddiq Bey,Malcolm Brogdon,Tristan Vukcevic

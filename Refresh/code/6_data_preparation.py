@@ -45,8 +45,18 @@ class DataPreprocessor:
     def prepare_player_stats(self):
         """Prepare player statistics data"""
         print("Preparing player statistics...")
-        # Calculate minutes per game
-        self.playerStats['MPG'] = round(self.playerStats['MP'] / self.playerStats['G'], 2)
+        
+        # Convert MP and G columns to numeric, coercing errors to NaN
+        self.playerStats['MP'] = pd.to_numeric(self.playerStats['MP'], errors='coerce')
+        self.playerStats['G'] = pd.to_numeric(self.playerStats['G'], errors='coerce')
+        
+        # Calculate minutes per game, handling potential division by zero
+        mask = self.playerStats['G'] > 0  # Only calculate for players who played games
+        self.playerStats['MPG'] = 0  # Initialize with zeros
+        self.playerStats.loc[mask, 'MPG'] = round(
+            self.playerStats.loc[mask, 'MP'] / self.playerStats.loc[mask, 'G'], 
+            2
+        )
         
         # Select and clean player stats
         self.playerStats_df = self.playerStats[["Player", "Team", "MPG", "PER", "WS/48", "Season"]].copy()
@@ -54,8 +64,8 @@ class DataPreprocessor:
         
         # Handle multiple team players
         self.playerStats_df = (self.playerStats_df.groupby(["Player", "Season"])
-                             .apply(self._handle_multiple_teams)
-                             .reset_index(drop=True))
+                            .apply(self._handle_multiple_teams)
+                            .reset_index(drop=True))
         print("Player statistics preparation complete.")
 
     def _handle_multiple_teams(self, df):
@@ -125,7 +135,6 @@ class DataPreprocessor:
         )
         
         # Create team_opp column from the lineup data
-        # Get even and odd rows
         even_rows = self.merged_df.iloc[::2].reset_index(drop=True)
         odd_rows = self.merged_df.iloc[1::2].reset_index(drop=True)
         
@@ -164,8 +173,8 @@ class DataPreprocessor:
             self.merged_df[f'Big{n}'] = 0
             self.merged_df[f'Big{n}_opp'] = 0
         
-        self.merged_df['PER_Combined'] = 0
-        self.merged_df['PER_Combined_opp'] = 0
+        self.merged_df['PER_Combined'] = 0.0
+        self.merged_df['PER_Combined_opp'] = 0.0
         
         # Calculate stats for each row
         print("Processing game statistics...")
@@ -175,39 +184,37 @@ class DataPreprocessor:
             if idx % 100 == 0:
                 print(f"Processing game {idx}/{total_rows}...")
                 
-            # Main team calculations
             try:
-                top_players = [row[f'Top{i}'] for i in range(1, 6)]
-                game_players = [row[f'Player {i}'] for i in range(1, 16) if pd.notna(row[f'Player {i}'])]
-                common_players = set(top_players) & set(game_players)
+                # Convert PER values to numeric, handling any conversion errors
+                per_values = []
+                for i in range(1, 6):
+                    if row[f'Top{i}'] in set(str(player).strip() for player in row[f'Player {i}'] if pd.notna(player)):
+                        per_val = pd.to_numeric(row[f'Top{i}_PER'], errors='coerce')
+                        if pd.notna(per_val):
+                            per_values.append(per_val)
                 
-                n_common = len(common_players)
-                if n_common > 0:
-                    self.merged_df.at[idx, f'Big{n_common}'] = 1
+                if per_values:
+                    self.merged_df.at[idx, f'Big{len(per_values)}'] = 1
+                    self.merged_df.at[idx, 'PER_Combined'] = sum(per_values)
                 
-                per_values = [row[f'Top{i}_PER'] for i in range(1, 6) if row[f'Top{i}'] in common_players]
-                self.merged_df.at[idx, 'PER_Combined'] = sum(per_values)
-            except Exception as e:
-                print(f"Error processing main team at index {idx}: {str(e)}")
+                # Opponent calculations
+                opp_per_values = []
+                for i in range(1, 6):
+                    opp_idx = idx + 1 if idx % 2 == 0 else idx - 1
+                    if 0 <= opp_idx < len(self.merged_df):
+                        opp_row = self.merged_df.iloc[opp_idx]
+                        if row[f'Top{i}_opp'] in set(str(player).strip() for player in opp_row[f'Player {i}'] if pd.notna(player)):
+                            per_val = pd.to_numeric(row[f'Top{i}_PER_opp'], errors='coerce')
+                            if pd.notna(per_val):
+                                opp_per_values.append(per_val)
                 
-            # Opponent team calculations
-            try:
-                top_players_opp = [row[f'Top{i}_opp'] for i in range(1, 6)]
-                # Get the opponent's players (next row if even index, previous row if odd index)
-                opp_idx = idx + 1 if idx % 2 == 0 else idx - 1
-                if 0 <= opp_idx < len(self.merged_df):
-                    opp_row = self.merged_df.iloc[opp_idx]
-                    game_players_opp = [opp_row[f'Player {i}'] for i in range(1, 16) if pd.notna(opp_row[f'Player {i}'])]
-                    common_players_opp = set(top_players_opp) & set(game_players_opp)
+                if opp_per_values:
+                    self.merged_df.at[idx, f'Big{len(opp_per_values)}_opp'] = 1
+                    self.merged_df.at[idx, 'PER_Combined_opp'] = sum(opp_per_values)
                     
-                    n_common_opp = len(common_players_opp)
-                    if n_common_opp > 0:
-                        self.merged_df.at[idx, f'Big{n_common_opp}_opp'] = 1
-                    
-                    per_values_opp = [row[f'Top{i}_PER_opp'] for i in range(1, 6) if row[f'Top{i}_opp'] in common_players_opp]
-                    self.merged_df.at[idx, 'PER_Combined_opp'] = sum(per_values_opp)
             except Exception as e:
-                print(f"Error processing opponent team at index {idx}: {str(e)}")
+                print(f"Error processing at index {idx}: {str(e)}")
+                continue
         
         print("Team statistics calculation complete.")
 
