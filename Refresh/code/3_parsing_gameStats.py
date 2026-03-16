@@ -287,6 +287,13 @@ def parse_season_data(years):
         else:
             print(f"No new games to add for season {year}")
 
+def get_current_season():
+    """Basketball-reference season label: Jan-Jun -> same year, Jul-Dec -> year+1."""
+    from datetime import datetime
+    now = datetime.now()
+    return now.year if now.month <= 6 else now.year + 1
+
 if __name__ == "__main__":
-    years = ["2025"]
+    current = get_current_season()
+    years = [str(current - 1), str(current)]
     parse_season_data(years)

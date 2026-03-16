@@ -306,10 +306,28 @@ class DataPreprocessor:
         print(f"Data saved to {self.output_path}")
         print(f"Final dataset shape: {self.final_df.shape}")
 
+def get_current_season():
+    """Basketball-reference season label: Jan-Jun -> same year, Jul-Dec -> year+1."""
+    from datetime import datetime
+    now = datetime.now()
+    return now.year if now.month <= 6 else now.year + 1
+
+def get_latest_available_season():
+    """Return the most recent season year for which all required CSVs exist."""
+    base = "Refresh/data"
+    current = get_current_season()
+    for year in range(current, current - 3, -1):
+        y = str(year)
+        if (os.path.exists(f"{base}/parsed_csvs/gameLineup_csv/gameLineup_{y}.csv") and
+                os.path.exists(f"{base}/parsed_csvs/playerStats_csv/playerStats_{y}.csv") and
+                os.path.exists(f"{base}/parsed_csvs/scores_csv/nba_games_{y}.csv")):
+            return y
+    raise FileNotFoundError("No complete season data found in Refresh/data/parsed_csvs/")
+
 def main():
     print("Starting data preprocessing...")
-    preprocessor = DataPreprocessor()
-    
+    preprocessor = DataPreprocessor(year=get_latest_available_season())
+
     # Execute preprocessing pipeline
     preprocessor.load_data()
     preprocessor.prepare_player_stats()

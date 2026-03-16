@@ -17,9 +17,25 @@ NBA data pipeline for scraping, parsing, and feature-engineering game statistics
 
 `Refresh/code/` scripts are OOP-style rewrites of the originals (`DataPreprocessor`, `NBAInjuryScraper`, `GameScheduleScraper` classes). When a script exists in both directories, prefer `Refresh/code/`.
 
-## Active Pipeline (Refresh/code/)
+## Running the Pipeline
 
-Run in order. Each stage depends on the previous output.
+### One-command run (recommended)
+
+```bash
+# Parse, prepare, feature-engineer, update injuries & schedule (no scraping)
+python Refresh/code/run_pipeline.py
+
+# Also scrape fresh HTML first (slow, requires Playwright)
+python Refresh/code/run_pipeline.py --with-scraping
+
+# Only refresh injuries + schedule, then re-run downstream steps
+python Refresh/code/run_pipeline.py --refresh-only
+
+# Full pipeline + ML model training
+python Refresh/code/run_pipeline.py --with-ml
+```
+
+### Manual step-by-step
 
 ```bash
 # Stage 1 — Scraping (requires Playwright)
@@ -37,11 +53,11 @@ python Refresh/code/9_injury_updates_bb-ref-dot-com.py  # → nba_injuries.csv +
 
 # Stage 4 — Data Preparation & Feature Engineering
 python Refresh/code/6_data_preparation.py        # merges 2025 game + player + lineup → fullGame_stats.csv
+python Refresh/code/10_schedules_data_prep.py    # next-game schedule + healthy lineups
 python Refresh/code/7_feature_engineering.py     # rolling stats, Elo, head-to-head → feature-engineered CSVs
 
-# Stage 5 — Next-Game Info
-python Refresh/code/10_schedules_data_prep.py    # transforms player stats into team roster format
-python Refresh/code/11_updating_nextGame_info.py # merges schedule + injury data for next-game features
+# Stage 5 — ML Training
+python Refresh/code/12_model_training.py         # train, compare, and save best model
 ```
 
 Install dependencies:
@@ -97,8 +113,9 @@ Refresh/data/feature_engineered_csv/
 
 ## TODO
 
-- [ ] Scrape and parse all 2025-to-date data (game stats, player stats, game lineups, schedule, injury updates) and set up the pipeline to scrape new games incrementally and sync with the 2014–2024 historical data to keep the dataset current.
-- [ ] Run feature engineering on the combined/refreshed data as part of the pipeline.
-- [ ] Process next-game info and player availability (injury status) as part of each pipeline run.
-- [ ] Build, evaluate, and tune ML prediction models — compare multiple models and hyperparameter configurations and select the best performer.
-- [ ] Clean up and consolidate the codebase (remove duplication between `code/` and `Refresh/code/`, standardize style).
+- [x] Set up incremental pipeline (`run_pipeline.py`) — scrapes new data and syncs with 2014–2024 history.
+- [x] Feature engineering runs automatically as part of each pipeline run.
+- [x] Next-game info and player availability processed each run (scripts 10, 11).
+- [x] ML model training script (`12_model_training.py`) — compares RidgeClassifier, LogisticRegression, RandomForest, GradientBoosting using TimeSeriesSplit; saves best model.
+- [x] Cleaned up duplicate code: `11_updating_nextGame_info.py` now delegates to `6_data_preparation.py`; hardcoded Windows path in `7_feature_engineering.py` replaced with dynamic `__file__`-relative path.
+- [ ] Tune hyperparameters for the best model and re-evaluate.

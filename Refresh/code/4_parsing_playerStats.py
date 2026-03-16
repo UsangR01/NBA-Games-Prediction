@@ -1,7 +1,7 @@
 import warnings
 import pandas as pd
 import os
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from datetime import datetime
 from typing import List, Optional, Dict
 from dataclasses import dataclass
@@ -63,6 +63,13 @@ class PlayerStatsProcessor:
         """Parse HTML content and extract table data"""
         soup = BeautifulSoup(html_content, "html.parser")
         table = soup.find("table", id="advanced")
+        if not table:
+            # Basketball-reference wraps tables inside HTML comments
+            for comment in soup.find_all(string=lambda t: isinstance(t, Comment)):
+                comment_soup = BeautifulSoup(comment, "html.parser")
+                table = comment_soup.find("table", id="advanced")
+                if table:
+                    break
         if not table:
             print("Table with id 'advanced' not found")
             return []

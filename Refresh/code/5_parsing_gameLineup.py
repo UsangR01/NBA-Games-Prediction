@@ -6,8 +6,14 @@ from bs4 import BeautifulSoup
 from io import StringIO
 from datetime import datetime
 
-# Constants
-YEARS = ["2025"]
+# Constants — auto-detect current NBA season
+def _get_current_season():
+    from datetime import datetime
+    now = datetime.now()
+    return now.year if now.month <= 6 else now.year + 1
+
+_current = _get_current_season()
+YEARS = [str(_current - 1), str(_current)]
 BASE_DIR = "Refresh/data/parsed_csvs/gameLineup_csv"
 SCORES_DIR_TEMPLATE = "Refresh/data/scrapped_htmls/boxscore_stats/{year}/scores"
 PARSED_FILES_TRACKER = f"{BASE_DIR}/parsed_files.txt"

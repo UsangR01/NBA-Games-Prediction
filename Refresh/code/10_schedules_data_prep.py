@@ -200,10 +200,36 @@ class GameScheduleCleaner:
         # Save the final data
         self.save_data()
 
-# Usage
-input_file = "Refresh/data/parsed_csvs/gameSchedules_csv/NBA_2025_games_schedule.csv"
-output_file = "Refresh/data/preprocessed_cleaned_csv/nextGame_lineUp_and_schedule.csv"
-stats_file = "Refresh/data/parsed_csvs/playerStats_csv/playerStats_2025.csv"
+def get_current_season():
+    """Basketball-reference season label: Jan-Jun -> same year, Jul-Dec -> year+1."""
+    from datetime import datetime
+    now = datetime.now()
+    return now.year if now.month <= 6 else now.year + 1
 
-cleaner = GameScheduleCleaner(input_file, output_file, stats_file)
-cleaner.run()
+def get_latest_available_season():
+    """Return the most recent season year for which playerStats CSV exists."""
+    base = "Refresh/data"
+    current = get_current_season()
+    for year in range(current, current - 3, -1):
+        path = f"{base}/parsed_csvs/playerStats_csv/playerStats_{year}.csv"
+        if os.path.exists(path):
+            return year
+    raise FileNotFoundError("No playerStats CSV found in Refresh/data/parsed_csvs/playerStats_csv/")
+
+if __name__ == "__main__":
+    season = get_latest_available_season()
+    input_file  = "Refresh/data/parsed_csvs/gameSchedules_csv/NBA_2025_games_schedule.csv"
+    output_file = "Refresh/data/preprocessed_cleaned_csv/nextGame_lineUp_and_schedule.csv"
+    stats_file  = f"Refresh/data/parsed_csvs/playerStats_csv/playerStats_{season}.csv"
+
+    cleaner = GameScheduleCleaner(input_file, output_file, stats_file)
+    cleaner.run()
+else:
+    # Allow importing without side effects; callers must invoke main() explicitly
+    def main():
+        season = get_latest_available_season()
+        input_file  = "Refresh/data/parsed_csvs/gameSchedules_csv/NBA_2025_games_schedule.csv"
+        output_file = "Refresh/data/preprocessed_cleaned_csv/nextGame_lineUp_and_schedule.csv"
+        stats_file  = f"Refresh/data/parsed_csvs/playerStats_csv/playerStats_{season}.csv"
+        cleaner = GameScheduleCleaner(input_file, output_file, stats_file)
+        cleaner.run()

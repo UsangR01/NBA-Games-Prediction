@@ -10,8 +10,8 @@ class FeatureEngineer:
         pd.set_option('display.max_columns', None)
         warnings.filterwarnings('ignore')
         
-        # Constants
-        self.BASE_DIR = r"C:\Users\User\OneDrive\sandbox\Refresh\data"
+        # Constants — resolve relative to this file so the script works from any working directory
+        self.BASE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
         self.DATA_PATH = f"{self.BASE_DIR}/preprocessed_cleaned_csv/fullGame_stats.csv"
         self.PAST_SEASONS_PATH = f"{self.BASE_DIR}/preprocessed_cleaned_csv/fullGame_stats_2024.csv"
         self.OUTPUT_DIR = f"{self.BASE_DIR}/feature_engineered_csv"
