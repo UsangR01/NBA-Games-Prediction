@@ -8,9 +8,10 @@ from datetime import datetime
 pd.set_option('display.max_columns', None)
 
 # Constants
-BASE_DIR = "Refresh/data/parsed_csvs/scores_csv"
-PARSED_FILES_LOG = os.path.join(BASE_DIR, "parsed_files2025.txt")
-GAMES_CSV_TEMPLATE = os.path.join(BASE_DIR, "nba_games_v2_{}.csv")
+BASE_DIR = "data/scrapped_htmls/boxscore_stats"
+OUTPUT_DIR = "data/parsed_csvs/scores_csv"
+PARSED_FILES_LOG = os.path.join(OUTPUT_DIR, "parsed_files_all.txt")
+FINAL_OUTPUT_FILE = os.path.join(OUTPUT_DIR, "nba_games_all.csv")
 
 # ---------------- Helper Functions ----------------
 
@@ -29,6 +30,7 @@ def load_parsed_files(log_path=PARSED_FILES_LOG):
 def save_parsed_file(file_path, log_path=PARSED_FILES_LOG):
     """Save the parsed file name with timestamp to the log file."""
     current_time = datetime.now().timestamp()
+    ensure_directory_exists(os.path.dirname(log_path))
     with open(log_path, "a") as f:
         f.write(f"{file_path},{current_time}\n")
 
@@ -36,18 +38,17 @@ def ensure_directory_exists(directory_path):
     """Ensure a directory exists, if not, create it."""
     os.makedirs(directory_path, exist_ok=True)
 
-def load_existing_games(season):
-    """Load existing games data for a season if it exists."""
-    csv_path = GAMES_CSV_TEMPLATE.format(season)
-    if os.path.exists(csv_path):
-        return pd.read_csv(csv_path, index_col=0)
+def load_existing_games():
+    """Load existing combined games data if it exists."""
+    if os.path.exists(FINAL_OUTPUT_FILE):
+        return pd.read_csv(FINAL_OUTPUT_FILE, index_col=0)
     return None
 
-def save_combined_games(games_df, season):
+def save_combined_games(games_df):
     """Save combined games data to CSV."""
-    csv_path = GAMES_CSV_TEMPLATE.format(season)
-    games_df.to_csv(csv_path)
-    print(f"Saved combined data to {csv_path}")
+    ensure_directory_exists(OUTPUT_DIR)
+    games_df.to_csv(FINAL_OUTPUT_FILE)
+    print(f"Saved combined data to {FINAL_OUTPUT_FILE}")
 
 def should_parse_file(file_path, parsed_files):
     """Determine if a file should be parsed based on modification time."""
@@ -125,31 +126,22 @@ def read_stats(soup, team, stat):
 
 # ---------------- Game Data Handling ----------------
 
-def process_game_data(soup, base_cols=None):
-    """Process the game data from the parsed HTML."""
-    line_score = read_line_score(soup)
-    teams = list(line_score["team"])
-    
-    summaries = []
-    for team in teams:
-        basic = read_stats(soup, team, "basic")
-        advanced = read_stats(soup, team, "advanced")
-        
-        summary = create_team_summary(basic, advanced, base_cols)
-        summaries.append(summary)
-    
-    summary = pd.concat(summaries, axis=1).T
-    game = pd.concat([summary, line_score], axis=1)
-    game["home"] = [0, 1]
-    return game
-
 def create_team_summary(basic, advanced, base_cols=None):
     """Create a summary of team data using basic and advanced stats."""
+    # Rename duplicate columns in basic stats
+    basic_cols = basic.columns.tolist()
+    if 'MP' in basic_cols:
+        basic = basic.rename(columns={'MP': 'MP.1'})
+    
     totals = pd.concat([basic.iloc[-1, :], advanced.iloc[-1, :]])
     totals.index = totals.index.str.lower()
     
     maxes = pd.concat([basic.iloc[:-1].max(), advanced.iloc[:-1].max()])
     maxes.index = maxes.index.str.lower() + "_max"
+    
+    # Rename duplicate max columns
+    if 'mp_max' in maxes.index:
+        maxes = maxes.rename({'mp_max': 'mp_max.1'})
     
     summary = pd.concat([totals, maxes])
     
@@ -159,6 +151,46 @@ def create_team_summary(basic, advanced, base_cols=None):
     
     summary = summary[base_cols]
     return summary
+
+def process_game_data(soup, base_cols=None):
+    """Process the game data from the parsed HTML."""
+    line_score = read_line_score(soup)
+    teams = list(line_score["team"])
+    
+    summaries = []
+    for team in teams:
+        try:
+            basic = read_stats(soup, team, "basic")
+            advanced = read_stats(soup, team, "advanced")
+            
+            # Handle duplicate column names in basic stats
+            if 'MP' in basic.columns:
+                basic = basic.rename(columns={'MP': 'MP.1'})
+            
+            summary = create_team_summary(basic, advanced, base_cols)
+            summaries.append(summary)
+        except Exception as e:
+            print(f"Error processing stats for team {team}: {str(e)}")
+            raise
+    
+    # Ensure we have stats for both teams
+    if len(summaries) != 2:
+        raise ValueError(f"Expected stats for 2 teams, got {len(summaries)}")
+    
+    summary = pd.concat(summaries, axis=1).T
+    
+    # Ensure no duplicate column names
+    summary.columns = pd.Index(summary.columns).drop_duplicates(keep='first')
+    
+    game = pd.concat([summary, line_score], axis=1)
+    game["home"] = [0, 1]
+    
+    # Add missing columns with NA values
+    for col in ['gmsc', 'mp.1']:
+        if col not in game.columns:
+            game[col] = pd.NA
+    
+    return game
 
 def combine_game_data(game, soup, box_score):
     """
@@ -190,7 +222,30 @@ def combine_game_data(game, soup, box_score):
     return full_game
 
 def assign_column_headers(df):
-    """Assign predefined column headers to the DataFrame."""
+    """
+    Assign predefined column headers to the DataFrame with validation and error handling.
+    """
+    # First, fix any duplicate column names in the current DataFrame
+    current_cols = df.columns.tolist()
+    new_cols = []
+    seen = set()
+    
+    for col in current_cols:
+        if col in seen:
+            if 'mp' in col.lower():
+                if col.endswith('_opp'):
+                    new_cols.append('mp_opp.1')
+                else:
+                    new_cols.append('mp.1')
+            else:
+                new_cols.append(f"{col}_1")
+        else:
+            new_cols.append(col)
+            seen.add(col)
+    
+    df.columns = new_cols
+    
+    # Define expected columns
     column_headers = [
         'mp', 'mp.1', 'fg', 'fga', 'fg%', '3p', '3pa', '3p%', 'ft', 'fta', 'ft%', 'orb', 'drb', 'trb', 'ast',
         'stl', 'blk', 'tov', 'pf', 'pts', 'gmsc', '+/-', 'ts%', 'efg%', '3par', 'ftr', 'orb%', 'drb%', 'trb%',
@@ -210,20 +265,34 @@ def assign_column_headers(df):
         'trb%_max_opp', 'ast%_max_opp', 'stl%_max_opp', 'blk%_max_opp', 'tov%_max_opp', 'usg%_max_opp',
         'ortg_max_opp', 'drtg_max_opp', 'team_opp', 'total_opp', 'home_opp', 'season', 'date', 'won'
     ]
-    df.columns = column_headers
-    return df
 
-def parse_season_data(years):
-    """Parse HTML files for multiple seasons and combine with existing data."""
-    parsed_files = load_parsed_files()
+    # Create a new DataFrame with all expected columns
+    new_df = pd.DataFrame(index=df.index, columns=column_headers)
     
-    for year in years:
-        score_dir = f"Refresh/data/scrapped_htmls/boxscore_stats/{year}/scores"
-        ensure_directory_exists(BASE_DIR)
+    # Copy data from old DataFrame to new one
+    for col in df.columns:
+        if col in column_headers:
+            new_df[col] = df[col]
+    
+    # Fill missing columns with NA
+    new_df = new_df.fillna(pd.NA)
+    
+    return new_df
+
+def parse_multiple_seasons(start_year=2014, end_year=2024):
+    """Parse HTML files for multiple seasons and combine into a single dataset."""
+    parsed_files = load_parsed_files()
+    all_games = []
+    
+    for year in range(start_year, end_year + 1):
+        score_dir = os.path.join(BASE_DIR, str(year), "scores")
         
-        # Load existing games data for the season
-        existing_games = load_existing_games(year)
-        new_games = []
+        if not os.path.exists(score_dir):
+            print(f"Directory not found for year {year}, skipping...")
+            continue
+            
+        print(f"\nProcessing season {year}...")
+        ensure_directory_exists(OUTPUT_DIR)
         
         box_scores = [os.path.join(score_dir, f) for f in os.listdir(score_dir) if f.endswith(".html")]
         files_to_parse = [bs for bs in box_scores if should_parse_file(bs, parsed_files)]
@@ -232,61 +301,76 @@ def parse_season_data(years):
             print(f"No new or modified files to parse for season {year}")
             continue
             
-        print(f"Found {len(files_to_parse)} new or modified files to parse for season {year}")
+        print(f"Found {len(files_to_parse)} files to parse for season {year}")
         
+        season_games = []
         base_cols = None
+        
         for box_score in files_to_parse:
             try:
                 soup = parse_html(box_score)
                 game = process_game_data(soup, base_cols)
                 full_game = combine_game_data(game, soup, box_score)
                 
-                new_games.append(full_game)
+                season_games.append(full_game)
                 save_parsed_file(box_score)
                 
-                if len(new_games) % 10 == 0:
-                    print(f"Processed {len(new_games)} / {len(files_to_parse)} new games")
+                if len(season_games) % 10 == 0:
+                    print(f"Processed {len(season_games)} / {len(files_to_parse)} games")
                     
             except Exception as e:
                 print(f"Error processing {box_score}: {str(e)}")
                 continue
         
-        if new_games:
-            # Combine all new games
-            new_games_df = pd.concat(new_games, ignore_index=True)
-            new_games_df = assign_column_headers(new_games_df)
+        if season_games:
+            # Combine season games
+            season_games_df = pd.concat(season_games, ignore_index=True)
+            season_games_df = assign_column_headers(season_games_df)
             
-            if existing_games is not None:
-                # Remove any existing games with the same dates as new games
-                existing_dates = pd.to_datetime(existing_games['date'])
-                new_dates = pd.to_datetime(new_games_df['date'])
-                existing_games = existing_games[~existing_dates.isin(new_dates)]
-                
-                # Combine existing and new games
-                combined_games = pd.concat([existing_games, new_games_df], ignore_index=True)
-            else:
-                combined_games = new_games_df
+            # Add to all games
+            all_games.append(season_games_df)
             
-            # Sort by date and ensure proper team ordering
-            combined_games['date'] = pd.to_datetime(combined_games['date'])
-            
-            # Create a game identifier to keep pairs together
-            combined_games['game_id'] = (combined_games.index // 2).astype(int)
-            
-            # Sort by date and game_id to keep teams from same game together
-            combined_games = combined_games.sort_values(['date', 'game_id', 'home'])
-            
-            # Drop the temporary game_id column
-            combined_games = combined_games.drop('game_id', axis=1).reset_index(drop=True)
-            
-            # Save the combined games data
-            save_combined_games(combined_games, year)
             print(f"Successfully processed season {year}:")
-            print(f"- {len(new_games)} new games added")
-            print(f"- {len(combined_games)} total games in dataset")
+            print(f"- {len(season_games)} games added")
         else:
             print(f"No new games to add for season {year}")
+    
+    if all_games:
+        # Combine all seasons
+        all_games_df = pd.concat(all_games, ignore_index=True)
+        
+        # Load existing data if any
+        existing_games = load_existing_games()
+        if existing_games is not None:
+            # Remove any existing games with the same dates as new games
+            existing_dates = pd.to_datetime(existing_games['date'])
+            new_dates = pd.to_datetime(all_games_df['date'])
+            existing_games = existing_games[~existing_dates.isin(new_dates)]
+            
+            # Combine with existing games
+            all_games_df = pd.concat([existing_games, all_games_df], ignore_index=True)
+        
+        # Sort by date and ensure proper team ordering
+        all_games_df['date'] = pd.to_datetime(all_games_df['date'])
+        
+        # Create a game identifier to keep pairs together
+        all_games_df['game_id'] = (all_games_df.index // 2).astype(int)
+        
+        # Sort by date and game_id to keep teams from same game together
+        all_games_df = all_games_df.sort_values(['date', 'game_id', 'home'])
+        
+        # Drop the temporary game_id column
+        all_games_df = all_games_df.drop('game_id', axis=1).reset_index(drop=True)
+        
+        # Save the combined games data
+        save_combined_games(all_games_df)
+        print(f"\nFinal dataset statistics:")
+        print(f"- Total games: {len(all_games_df) // 2}")
+        print(f"- Date range: {all_games_df['date'].min().date()} to {all_games_df['date'].max().date()}")
+    else:
+        print("\nNo new games to add to the dataset")
 
 if __name__ == "__main__":
-    years = ["2025"]
-    parse_season_data(years)
+    print("Starting NBA game data processing...")
+    parse_multiple_seasons(2014, 2024)
+    print("Processing complete!")
